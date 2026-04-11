@@ -1,0 +1,2 @@
+# pytorch_and_llm_learn
+自学pytorch和llm的过程
