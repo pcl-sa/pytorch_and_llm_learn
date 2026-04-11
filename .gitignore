@@ -208,3 +208,6 @@ __marimo__/
 
 #idea folder
 .idea/
+
+#数据相关文件
+data/
