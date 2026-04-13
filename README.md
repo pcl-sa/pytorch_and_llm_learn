@@ -7,3 +7,7 @@
 #### 1.1 [mnist_program.ipynb](chapter1_pytorch_learning/chapter1_1_MNIST_HandwrittenCharacterRecognition/mnist_program.ipynb)
 基本的MNIST手写数字识别项目，使用pytorch实现一个简单的神经网络模型
 
+## 第二章：项目部分
+### 1. [transformer项目](transformer_project)
+实现一个transformer模型的项目，并用transformer模型实现机器翻译，项目包括：
+- __model__ :transformer模型的核心实现
