@@ -25,7 +25,7 @@ class ScaleDotProductAttention(nn.Module):
         d_k = Q.size(-1)
         # 除以 sqrt(d_k)：将点积结果的方差从d_k缩放到1，避免softmax饱和
         # 注意：torch.sqrt里必须转float32，否则如果Q是float16会报错
-        scores = scores / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
+        scores = scores / torch.sqrt(torch.tensor(d_k, dtype=torch.float32,device=Q.device))
 
         # ========== 步骤3：应用掩码（可选，解码器核心） ==========
         # mask形状：(B, n_head, seq_len_q, seq_len_k) 或 (B, 1, seq_len_q, seq_len_k)
@@ -53,7 +53,9 @@ class ScaleDotProductAttention(nn.Module):
 class MultiHeadAttention(nn.Module):
     def __init__(self, d_model, n_head):
         super().__init__()
+        assert d_model % n_head == 0,"d_model必须能被n_head整除"
         # 保存超参数：头数 + 每个头的维度（必须能被d_model整除）
+        self.d_model = d_model
         self.n_head = n_head  # 比如8
         self.d_k = d_model // n_head  # 比如512//8=64
 
@@ -77,6 +79,7 @@ class MultiHeadAttention(nn.Module):
 
         # 保存batch size，后续reshape要用
         batch_size = q.size(0)
+        seq_len = q.size(1)
 
         # ========== 步骤1：线性投影（Q/K/V分别过投影层） ==========
         # Q/K/V形状：(B, seq_len, d_model)
@@ -96,14 +99,6 @@ class MultiHeadAttention(nn.Module):
         # 此时Q/K/V形状：(B, n_head, seq_len, d_k)
 
         # ========== 步骤3：对每个头并行计算缩放点积注意力 ==========
-        # mask处理：如果mask不为None，需要扩展一个维度匹配n_head
-        # 比如mask原形状 (B, seq_len_q, seq_len_k) → unsqueeze(1) → (B, 1, seq_len_q, seq_len_k)
-        # 这样mask会自动广播到所有n_head，保证所有头的掩码规则一致
-        if mask is not None:
-            # 确保mask形状为 (B, 1, seq_len_q, seq_len_k)
-            mask = mask.unsqueeze(1) if mask.dim() == 3 else mask
-        # x：所有头的上下文向量，形状 (B, n_head, seq_len_q, d_k)
-        # attn：所有头的注意力权重，形状 (B, n_head, seq_len_q, seq_len_k)
         x, attn = self.attention(Q, K, V, mask)
 
         # ========== 步骤4：拼接多头结果（核心操作） ==========
@@ -112,7 +107,7 @@ class MultiHeadAttention(nn.Module):
         # 1. transpose(1,2)：把n_head维度换回第三个位置 → (B, seq_len_q, n_head, d_k)
         # 2. contiguous()：保证内存连续（transpose后内存不连续，view会报错）
         # 3. view：把n_head*d_k合并回d_model → (B, seq_len_q, d_model)
-        x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.n_head * self.d_k)
+        x = x.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
 
         # ========== 步骤5：最终线性投影 ==========
         # 把拼接后的结果过W^O层，投影回d_model维度
@@ -130,14 +125,14 @@ if __name__ == '__main__':
     print("模型参数量:", sum(p.numel() for p in attn_layer.parameters()))  # 模型参数量: 4198400
     #2.前向传播示例
     x = torch.randn(2, 100, 1024).to('cpu')  # batch=2, seq_len=100, d_model=1024
-    output = attn_layer(x, x, x)
+    output,_ = attn_layer(x, x, x)
     print("输出shape:", output.shape)  # 输出 torch.Size([2, 100, 1024])
     #3.测试一次的时间复杂度
     import time
     x_2=torch.randn(2, 100, 1024).to('cpu')
     attn_layer = MultiHeadAttention(d_model=1024, n_head=8)
     start = time.time()
-    output = attn_layer(x_2, x_2, x_2)
+    output,_ = attn_layer(x_2, x_2, x_2)
     end = time.time()
     print("多头注意力机制一次的时间复杂度:", end-start)#本机器：多头注意力机制一次的时间复杂度: 0.008917570114135742
 

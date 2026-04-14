@@ -22,7 +22,6 @@ import torch
 import torch.nn as nn
 from .feed_forward import FeedForward as FFN
 from .attention import MultiHeadAttention
-from .positional_encoding import PositionalEncoding as PE
 
 #单Encoder层
 class EncoderLayer(nn.Module):
@@ -53,52 +52,31 @@ class EncoderLayer(nn.Module):
 
 # Encoder(多层堆叠)
 class Encoder(nn.Module):
-    def __init__(self, vocab_size, d_model=512, n_head=8, d_ff=2048, n_layers=6, max_len=5000, dropout=0.1):
+    def __init__(self, d_model=512, n_head=8, d_ff=2048, n_layers=6,dropout=0.1):
         super().__init__()
-        self.d_model = d_model
-        # 1. 词嵌入层
-        self.embedding = nn.Embedding(vocab_size, d_model)
-        # 2. 位置编码层
-        self.pe = PE(d_model, max_len)
-
-        # 3. 输入层Dropout
-        self.dropout = nn.Dropout(dropout)
-        # 4. 堆叠n_layers个Encoder层
+        # 堆叠n_layers个Encoder层
         self.layers = nn.ModuleList([EncoderLayer(d_model, n_head, d_ff, dropout) for _ in range(n_layers)])
-        # 最终层归一化
-        self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x, mask=None):
-        # x shape: (batch_size, seq_len)，输入为token索引
-        batch_size, seq_len = x.size()
-
-        # 输入：词嵌入 + 位置编码
-        x = self.embedding(x) * torch.sqrt(torch.tensor(self.d_model, dtype=torch.float32))
-        pe_tensor = self.pe(x)
-        x = x + pe_tensor
-        x = self.dropout(x)
-
-        # 经过n_layers个Encoder层
+        # x shape: (batch_size, src_len, d_model)，输入为token索引,src_mask的形状: (batch_size, 1, src_len, src_len)
         for layer in self.layers:
             x = layer(x, mask)
-
-        # 最终层归一化
-        return self.norm(x)
+        return x
 
 # 测试
 if __name__ == '__main__':
 
-    encoder = Encoder(vocab_size=10000, d_model=512, n_head=8, d_ff=2048, n_layers=6, max_len=500, dropout=0.1)
+    encoder = Encoder(d_model=512, n_head=8, d_ff=2048, n_layers=6, dropout=0.1)
     #encoder参数量
-    print("encoder参数量:", sum(p.numel() for p in encoder.parameters()))#encoder参数量: 24035328
+    print("encoder参数量:", sum(p.numel() for p in encoder.parameters()))#encoder参数量: 18914304
     #测试前向传播
-    x = torch.randint(0, 10000, (1, 10))#batch_size=1, seq_len=10
+    x = torch.randn(2, 10, 512).to('cpu')#batch_size=2, src_len=10, d_model=512
     output = encoder(x)
-    print("encoder输出shape:", output.shape)#encoder输出shape: torch.Size([1, 10, 512])
+    print("encoder输出shape:", output.shape)#encoder输出shape: torch.Size([2, 10, 512])
 
     #3.测试一次的时间复杂度
     import time
     start = time.time()
     output = encoder(x)
     end = time.time()
-    print("encoder一次的时间复杂度:", end-start)#encoder一次的时间复杂度: 0.01693248748779297
+    print("encoder一次的时间复杂度:", end-start)#encoder一次的时间复杂度: 0.015582799911499023

@@ -35,7 +35,8 @@ class PositionalEncoding(nn.Module):
         # 取出对应长度的位置编码并加到输入上
         # x shape: [batch_size, seq_len, d_model]
         seq_len = x.size(1)
-        return self.pe[:, :seq_len, :]
+        x = x + self.pe[:, :seq_len, :]
+        return x
 
 
 # 测试位置编码层

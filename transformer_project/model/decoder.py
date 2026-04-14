@@ -27,7 +27,6 @@ import torch
 import torch.nn as nn
 from .feed_forward import FeedForward as FFN
 from .attention import MultiHeadAttention
-from .positional_encoding import PositionalEncoding as PE
 
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, n_head, d_ff, dropout=0.1):
@@ -64,19 +63,10 @@ class DecoderLayer(nn.Module):
 
 # -------------------------- 3. 完整Decoder（N层堆叠） --------------------------
 class Decoder(nn.Module):
-    def __init__(self, vocab_size, d_model=512, n_head=8, d_ff=2048, n_layers=6, max_len=500, dropout=0.1):
+    def __init__(self, d_model=512, n_head=8, d_ff=2048, n_layers=6, dropout=0.1):
         super().__init__()
-        self.d_model = d_model
-        # 词嵌入层
-        self.embedding = nn.Embedding(vocab_size, d_model)
-        # 位置编码
-        self.pe = PE(d_model, max_len)
-        # Dropout
-        self.dropout = nn.Dropout(dropout)
         # 堆叠n_layers个Decoder层
         self.layers = nn.ModuleList([DecoderLayer(d_model, n_head, d_ff, dropout) for _ in range(n_layers)])
-        # 最终层归一化
-        self.norm = nn.LayerNorm(d_model)
 
     def create_padding_mask(self, seq, pad_token_id=0):
         """
@@ -90,77 +80,13 @@ class Decoder(nn.Module):
         # 形状变化：(batch_size, seq_len) → (batch_size, 1, 1, seq_len)
         return mask
 
-    def create_cross_attention_mask(self, src_seq, tgt_seq, pad_token_id=0):
+    def forward(self, x, enc_out, causal_mask=None, cross_mask=None):
         """
-        生成交叉注意力的非方阵掩码（合并源+目标的Padding掩码）
-        :param src_seq: 源序列 (batch_size, src_len)
-        :param tgt_seq: 目标序列 (batch_size, tgt_len)
-        :return: cross_mask，形状 (batch_size, 1, tgt_len, src_len)
+        x: 主类处理好的目标嵌入张量 [batch, tgt_len, d_model]
+        enc_out: 编码器输出 [batch, src_len, d_model]
+        causal_mask: 因果掩码（主类传入）
+        cross_mask: 交叉注意力掩码（主类传入）
         """
-        # 1. 生成源Padding掩码 (batch_size, 1, 1, src_len)
-        src_mask = self.create_padding_mask(src_seq, pad_token_id)
-        # 2. 生成目标Padding掩码 (batch_size, 1, 1, tgt_len)
-        tgt_mask = self.create_padding_mask(tgt_seq, pad_token_id)
-        # 2. 转换为 (batch_size, 1, tgt_len, 1) 形状
-        tgt_mask = tgt_mask.permute(0, 1, 3, 2)
-        # 3. 广播合并 → 形状 (batch_size, 1, tgt_len, src_len)
-        cross_mask = src_mask & tgt_mask
-        return cross_mask
-
-    def generate_causal_mask(self, tgt_len):
-        """生成因果掩码（下三角矩阵）"""
-        mask = torch.tril(torch.ones(tgt_len, tgt_len, dtype=torch.bool))
-        # 扩展维度：(T,T) → (1,1,T,T)，适配批量+多头
-        mask = mask.unsqueeze(0).unsqueeze(0)
-        return mask
-
-    def forward(self, tgt_x, enc_out, src_seq, pad_token_id=0):
-        '''
-        Decoder前向传播
-        :param tgt_x: 目标序列，形状 (batch_size, tgt_len)
-        :param enc_out: Encoder输出，形状 (batch_size, src_len, d_model)
-        :param src_seq: 源序列，形状 (batch_size, src_len)
-        :param pad_token_id: Padding的token索引，默认0
-        :return: Decoder输出，形状 (batch_size, tgt_len, d_model)
-        '''
-        batch_size, tgt_len = tgt_x.size()
-        src_len=enc_out.size(1)
-
-        # 1. 词嵌入 + 位置编码
-        x = self.embedding(tgt_x) * torch.sqrt(torch.tensor(self.d_model, dtype=torch.float32))
-        x = x + self.pe(x)
-        x = self.dropout(x)
-
-        # 2. 生成因果掩码（tgt_mask）
-        causal_mask = self.generate_causal_mask(tgt_len).to(x.device)
-        # 3. 生成交叉注意力掩码（src_mask）
-        cross_mask=self.create_cross_attention_mask(src_seq, tgt_x, pad_token_id).to(x.device)
-
-        # 3. 经过n_layers个Decoder层
         for layer in self.layers:
             x = layer(x, enc_out, cross_mask, causal_mask)
-
-        # 4. 最终层归一化
-        return self.norm(x)
-
-#测试
-if __name__ == '__main__':
-    decoder = Decoder(vocab_size=10000, d_model=512, n_head=8, d_ff=2048, n_layers=6, max_len=500, dropout=0.1)
-    #decoder参数量
-    print("decoder参数量:", sum(p.numel() for p in decoder.parameters()))#decoder参数量: 30345216
-    # 模拟输入：机器翻译场景
-    pad_token_id = 0
-    # 源序列（batch_size=2, src_len=4）：["我","爱","中国","<PAD>"], ["你","好","吗","<PAD>"]
-    src_seq = torch.tensor([[1, 2, 3, 0], [4, 5, 6, 0]])
-    # 目标序列（batch_size=2, tgt_len=2）：["I","love"], ["Hi","there"]
-    tgt_seq = torch.tensor([[7, 8], [9, 10]])
-    # Encoder
-    from .encoder import Encoder
-    encoder=Encoder(vocab_size=10000, d_model=512, n_head=8, d_ff=2048, n_layers=6, max_len=500, dropout=0.1)
-    enc_out = encoder(src_seq)
-    print("encoder输出shape:", enc_out.shape)#torch.Size([2, 4, 512])
-    # Decoder
-    output = decoder(tgt_seq, enc_out, src_seq, pad_token_id=pad_token_id)
-    print("decoder输出shape:", output.shape)
-    cross_mask = decoder.create_cross_attention_mask(src_seq, tgt_seq, pad_token_id)
-    print("非方阵掩码形状：", cross_mask.shape)
+        return x
