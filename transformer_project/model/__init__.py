@@ -6,3 +6,4 @@
 from .encoder import EncoderLayer
 from .decoder import DecoderLayer
 from .transformer import Transformer, Encoder, Decoder
+from .word2index import Word2Idx
