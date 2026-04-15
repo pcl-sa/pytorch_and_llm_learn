@@ -68,18 +68,6 @@ class Decoder(nn.Module):
         # 堆叠n_layers个Decoder层
         self.layers = nn.ModuleList([DecoderLayer(d_model, n_head, d_ff, dropout) for _ in range(n_layers)])
 
-    def create_padding_mask(self, seq, pad_token_id=0):
-        """
-        生成Padding掩码
-        :param seq: 输入序列，形状 (batch_size, seq_len)
-        :param pad_token_id: Padding的token索引，默认0
-        :return: padding_mask，形状 (batch_size, 1, 1, seq_len)
-        """
-        # 先判断哪些位置是Padding（seq == pad_token_id）
-        mask = (seq != pad_token_id).unsqueeze(1).unsqueeze(2)
-        # 形状变化：(batch_size, seq_len) → (batch_size, 1, 1, seq_len)
-        return mask
-
     def forward(self, x, enc_out, causal_mask=None, cross_mask=None):
         """
         x: 主类处理好的目标嵌入张量 [batch, tgt_len, d_model]

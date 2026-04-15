@@ -1,6 +1,5 @@
 # 定义Transformer模型
 import torch
-import torch
 import torch.nn as nn
 
 # 导入你已实现的组件
@@ -115,12 +114,16 @@ class Transformer(nn.Module):
         tgt_emb = self.dropout(tgt_emb)
 
         # 生成掩码
+        tgt_padding_mask = self._create_padding_mask(tgt_seq).to(device)
+
         causal_mask = self._generate_causal_mask(tgt_len).to(device)
+
+        combined_tgt_mask = tgt_padding_mask & causal_mask
 
         cross_mask = self._create_cross_mask(src_seq, tgt_seq).to(device)
 
         # 解码器前向（传入编码器输出+源序列，生成交叉掩码）
-        dec_out = self.decoder(tgt_emb, enc_out, causal_mask, cross_mask)  # [batch_size, tgt_len, d_model]
+        dec_out = self.decoder(tgt_emb, enc_out, combined_tgt_mask, cross_mask)  # [batch_size, tgt_len, d_model]
 
         # -------------------------- 3. 最终输出 --------------------------
         output = self.fc_out(dec_out)

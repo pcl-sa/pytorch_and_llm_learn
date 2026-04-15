@@ -209,5 +209,6 @@ __marimo__/
 #idea folder
 .idea/
 
-#数据相关文件
+#数据、模型相关文件
 data/
+transformer_project/checkpoint/
